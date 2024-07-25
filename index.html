@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no"
+        name="viewport">
+    <title>Control BLE PWM Fan</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 50px;
+        }
+
+        #slider {
+            width: 300px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Control BLE PWM Fan</h1>
+    <button id="connectButton">Connect</button>
+    <br><br>
+    <input type="range" id="slider" min="0" max="255" value="0">
+    <p id="status">Status: Not Connected</p>
+    <p id="speed">Speed: 0</p>
+
+    <script>
+        const SERVICE_UUID = '12345678-1234-5678-1234-56789abcdef0';
+        const CHARACTERISTIC_UUID = 'abcdef01-1234-5678-1234-56789abcdef0';
+
+        let characteristic;
+        let isWriting = false;
+
+        // 连接按钮事件处理
+        document.getElementById('connectButton').addEventListener('click', async () => {
+            try {
+                // 请求 Bluetooth 设备
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ services: [SERVICE_UUID] }]
+                });
+
+                // 连接到 GATT 服务器
+                const server = await device.gatt.connect();
+
+                // 获取服务
+                const service = await server.getPrimaryService(SERVICE_UUID);
+
+                // 获取特征
+                characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+
+                // 读取特征值并更新页面
+                const value = await characteristic.readValue();
+                const speed = new TextDecoder().decode(value);
+                document.getElementById('slider').value = speed;
+                document.getElementById('speed').innerText = `Speed: ${speed}`;
+                document.getElementById('status').innerText = 'Status: Connected';
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('status').innerText = 'Status: Error';
+            }
+        });
+
+        // 节流函数
+        function throttle(func, limit) {
+            let lastFunc;
+            let lastRan;
+            return function () {
+                const context = this;
+                const args = arguments;
+                if (!lastRan) {
+                    func.apply(context, args);
+                    lastRan = Date.now();
+                } else {
+                    clearTimeout(lastFunc);
+                    lastFunc = setTimeout(function () {
+                        if ((Date.now() - lastRan) >= limit) {
+                            func.apply(context, args);
+                            lastRan = Date.now();
+                        }
+                    }, limit - (Date.now() - lastRan));
+                }
+            };
+        }
+
+        // 处理滑块输入事件
+        const handleSliderInput = throttle(async (event) => {
+            try {
+                if (!characteristic) {
+                    console.error('No characteristic found');
+                    return;
+                }
+
+                // 获取滑块值并写入特征
+                const speed = event.target.value;
+                const value = new TextEncoder().encode(speed.toString());
+
+                // 检查是否正在进行写操作，以避免重复写入
+                if (!isWriting) {
+                    isWriting = true;
+                    await characteristic.writeValue(value);
+                    isWriting = false;
+                }
+
+                // 更新显示的速度
+                document.getElementById('speed').innerText = `Speed: ${speed}`;
+            } catch (error) {
+                console.error('Error writing value:', error);
+            }
+        }, 100); // 设置节流时间间隔
+
+        // 绑定滑块输入事件
+        document.getElementById('slider').addEventListener('input', handleSliderInput);
+
+    </script>
+</body>
+
+</html>
